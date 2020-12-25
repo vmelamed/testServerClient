@@ -1,8 +1,8 @@
 package main
 
 import (
-	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -31,13 +31,15 @@ func main() {
 		SerialNumber:          serialNumber,
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().AddDate(0, 0, 1),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, // only for RSA keys: | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},        // x509.ExtKeyUsageClientAuth,
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		DNSNames:              []string{"test-ca", "test-ca.io"},
 	}
-	_, privKey, _ := ed25519.GenerateKey(rand.Reader)
-	certBytes, _ := x509.CreateCertificate(rand.Reader, templateCA, templateCA, privKey.Public(), privKey)
-	keyBytes, _ := x509.MarshalPKCS8PrivateKey(privKey)
+	// _, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	// privateKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	privateKey, _ := rsa.GenerateKey(rand.Reader, 4096)
+	certBytes, _ := x509.CreateCertificate(rand.Reader, templateCA, templateCA, privateKey.Public(), privateKey)
+	keyBytes, _ := x509.MarshalPKCS8PrivateKey(privateKey)
 	caCertPEM := pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: certBytes,
@@ -52,7 +54,7 @@ func main() {
 
 	// create server certificate
 	serialNumber, _ = rand.Int(rand.Reader, max)
-	template := &x509.Certificate{
+	templateServer := &x509.Certificate{
 		Subject: pkix.Name{
 			CommonName:   "localhost",
 			Organization: []string{"Server"},
@@ -61,13 +63,15 @@ func main() {
 		SerialNumber: serialNumber,
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().AddDate(0, 0, 1),
-		KeyUsage:     x509.KeyUsageDigitalSignature,                  // only for RSA keys: | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, // x509.ExtKeyUsageClientAuth,
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		DNSNames:     []string{"localhost"},
 	}
-	_, privKey, _ = ed25519.GenerateKey(rand.Reader)
-	certBytes, _ = x509.CreateCertificate(rand.Reader, template, caCert, privKey.Public(), privKey)
-	keyBytes, _ = x509.MarshalPKCS8PrivateKey(privKey)
+	// _, privateKey, _ = ed25519.GenerateKey(rand.Reader)
+	// privateKey, _ = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	privateKey, _ = rsa.GenerateKey(rand.Reader, 4096)
+	certBytes, _ = x509.CreateCertificate(rand.Reader, templateServer, caCert, privateKey.Public(), privateKey)
+	keyBytes, _ = x509.MarshalPKCS8PrivateKey(privateKey)
 	serverCertPEM := pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: certBytes,
@@ -83,8 +87,8 @@ func main() {
 	// create server
 	tlsServerConfig := &tls.Config{
 		Certificates:             []tls.Certificate{tlsCert},
-		MinVersion:               tls.VersionTLS13,
-		MaxVersion:               tls.VersionTLS13,
+		MinVersion:               tls.VersionTLS12,
+		MaxVersion:               tls.VersionTLS12,
 		PreferServerCipherSuites: true,
 		CurvePreferences: []tls.CurveID{
 			tls.X25519,
@@ -125,8 +129,8 @@ func main() {
 	tlsClientConfig := &tls.Config{
 		// ServerName:               "localhost",
 		RootCAs:                  x509.NewCertPool(),
-		MinVersion:               tls.VersionTLS13,
-		MaxVersion:               tls.VersionTLS13,
+		MinVersion:               tls.VersionTLS12,
+		MaxVersion:               tls.VersionTLS12,
 		PreferServerCipherSuites: true,
 		CurvePreferences: []tls.CurveID{
 			tls.X25519,
@@ -160,9 +164,9 @@ func main() {
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
-	fmt.Printf("Got from the server:\n%s", string(body))
 	if err != nil {
 		fmt.Printf("Error readiing the response:\n%+v", err)
 		return
 	}
+	fmt.Printf("Got from the server:\n%s", string(body))
 }
