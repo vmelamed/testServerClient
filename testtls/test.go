@@ -6,11 +6,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/pem"
 	"fmt"
 	"io/ioutil"
 	"math/big"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -39,18 +39,12 @@ func main() {
 	// privateKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	privateKey, _ := rsa.GenerateKey(rand.Reader, 4096)
 	certBytes, _ := x509.CreateCertificate(rand.Reader, templateCA, templateCA, privateKey.Public(), privateKey)
-	keyBytes, _ := x509.MarshalPKCS8PrivateKey(privateKey)
-	caCertPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: certBytes,
-	})
-	fmt.Printf(showCertCmdFmt, string(caCertPEM))
-	caKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: keyBytes,
-	})
-	tlsCert, _ := tls.X509KeyPair(caCertPEM, caKeyPEM)
-	caCert, _ := x509.ParseCertificate(tlsCert.Certificate[0])
+	caCert, _ := x509.ParseCertificate(certBytes)
+	tlsCACert := tls.Certificate{
+		Certificate: [][]byte{caCert.Raw},
+		PrivateKey:  privateKey,
+		Leaf:        caCert,
+	}
 
 	// create server certificate
 	serialNumber, _ = rand.Int(rand.Reader, max)
@@ -63,30 +57,22 @@ func main() {
 		SerialNumber: serialNumber,
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().AddDate(0, 0, 1),
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		DNSNames:     []string{"localhost"},
 	}
-	// _, privateKey, _ = ed25519.GenerateKey(rand.Reader)
-	// privateKey, _ = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	privateKey, _ = rsa.GenerateKey(rand.Reader, 4096)
 	certBytes, _ = x509.CreateCertificate(rand.Reader, templateServer, caCert, privateKey.Public(), privateKey)
-	keyBytes, _ = x509.MarshalPKCS8PrivateKey(privateKey)
-	serverCertPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: certBytes,
-	})
-	serverCertPEM = append(serverCertPEM, caCertPEM...)
-	fmt.Printf(showCertCmdFmt, string(serverCertPEM))
-	serverKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: keyBytes,
-	})
-	tlsCert, _ = tls.X509KeyPair(serverCertPEM, serverKeyPEM)
+	cert, _ := x509.ParseCertificate(certBytes)
+	tlsCert := tls.Certificate{
+		Certificate: [][]byte{cert.Raw, caCert.Raw},
+		PrivateKey:  privateKey,
+		Leaf:        cert,
+	}
 
 	// create server
 	tlsServerConfig := &tls.Config{
-		Certificates:             []tls.Certificate{tlsCert},
+		Certificates:             []tls.Certificate{tlsCert, tlsCACert},
 		MinVersion:               tls.VersionTLS12,
 		MaxVersion:               tls.VersionTLS12,
 		PreferServerCipherSuites: true,
@@ -127,7 +113,7 @@ func main() {
 
 	// create client
 	tlsClientConfig := &tls.Config{
-		// ServerName:               "localhost",
+		ServerName:               "localhost",
 		RootCAs:                  x509.NewCertPool(),
 		MinVersion:               tls.VersionTLS12,
 		MaxVersion:               tls.VersionTLS12,
@@ -159,14 +145,14 @@ func main() {
 	res, err := client.Get("https://localhost:2000")
 	if err != nil {
 		fmt.Printf("Error GET-ing from the server:\n%+v", err)
-		return
+		os.Exit(1)
 	}
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		fmt.Printf("Error readiing the response:\n%+v", err)
-		return
+		os.Exit(2)
 	}
 	fmt.Printf("Got from the server:\n%s", string(body))
 }
