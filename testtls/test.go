@@ -38,10 +38,10 @@ func main() {
 	// _, keyBytes, _ := ed25519.GenerateKey(rand.Reader)
 	// keyBytes, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	keyBytes, _ := rsa.GenerateKey(rand.Reader, 4096)
-	certBytes, _ := x509.CreateCertificate(rand.Reader, templateCA, templateCA, keyBytes.Public(), keyBytes)
-	caCert, _ := x509.ParseCertificate(certBytes)
+	caCertBytes, _ := x509.CreateCertificate(rand.Reader, templateCA, templateCA, keyBytes.Public(), keyBytes)
+	caCert, _ := x509.ParseCertificate(caCertBytes)
 	tlsCACert := tls.Certificate{
-		Certificate: [][]byte{caCert.Raw},
+		Certificate: [][]byte{caCertBytes},
 		PrivateKey:  keyBytes,
 		Leaf:        caCert,
 	}
@@ -62,10 +62,10 @@ func main() {
 		DNSNames:     []string{"localhost"},
 	}
 	keyBytes, _ = rsa.GenerateKey(rand.Reader, 4096)
-	certBytes, _ = x509.CreateCertificate(rand.Reader, templateServer, caCert, keyBytes.Public(), keyBytes)
+	certBytes, _ := x509.CreateCertificate(rand.Reader, templateServer, caCert, keyBytes.Public(), keyBytes)
 	cert, _ := x509.ParseCertificate(certBytes)
 	tlsCert := tls.Certificate{
-		Certificate: [][]byte{cert.Raw, caCert.Raw},
+		Certificate: [][]byte{certBytes, caCertBytes},
 		PrivateKey:  keyBytes,
 		Leaf:        cert,
 	}
