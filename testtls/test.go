@@ -35,14 +35,14 @@ func main() {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		DNSNames:              []string{"test-ca", "test-ca.io"},
 	}
-	// _, privateKey, _ := ed25519.GenerateKey(rand.Reader)
-	// privateKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	privateKey, _ := rsa.GenerateKey(rand.Reader, 4096)
-	certBytes, _ := x509.CreateCertificate(rand.Reader, templateCA, templateCA, privateKey.Public(), privateKey)
+	// _, keyBytes, _ := ed25519.GenerateKey(rand.Reader)
+	// keyBytes, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	keyBytes, _ := rsa.GenerateKey(rand.Reader, 4096)
+	certBytes, _ := x509.CreateCertificate(rand.Reader, templateCA, templateCA, keyBytes.Public(), keyBytes)
 	caCert, _ := x509.ParseCertificate(certBytes)
 	tlsCACert := tls.Certificate{
 		Certificate: [][]byte{caCert.Raw},
-		PrivateKey:  privateKey,
+		PrivateKey:  keyBytes,
 		Leaf:        caCert,
 	}
 
@@ -61,12 +61,12 @@ func main() {
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		DNSNames:     []string{"localhost"},
 	}
-	privateKey, _ = rsa.GenerateKey(rand.Reader, 4096)
-	certBytes, _ = x509.CreateCertificate(rand.Reader, templateServer, caCert, privateKey.Public(), privateKey)
+	keyBytes, _ = rsa.GenerateKey(rand.Reader, 4096)
+	certBytes, _ = x509.CreateCertificate(rand.Reader, templateServer, caCert, keyBytes.Public(), keyBytes)
 	cert, _ := x509.ParseCertificate(certBytes)
 	tlsCert := tls.Certificate{
 		Certificate: [][]byte{cert.Raw, caCert.Raw},
-		PrivateKey:  privateKey,
+		PrivateKey:  keyBytes,
 		Leaf:        cert,
 	}
 
