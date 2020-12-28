@@ -3,14 +3,42 @@ set +x
 
 script_dir=$(dirname $0)
 pushd $script_dir
+rm *.pem *.cnf
+
+case $1 in
+    RSA|rsa|RSA2048|rsa2048 )
+        openssl genrsa -out ca-key.pem 2048
+        openssl genrsa -out server-key.pem 2048
+        ;;
+    RSA4096|rsa4096 )
+        openssl genrsa -out ca-key.pem 4096
+        openssl genrsa -out server-key.pem 4096
+        ;;
+    P256|p256 )
+        openssl ecparam -genkey -name secp256k1 -out ca-key.pem
+        openssl ecparam -genkey -name secp256k1 -out server-key.pem
+        ;;
+    P384|p384 )
+        openssl ecparam -genkey -name secp384r1 -out ca-key.pem
+        openssl ecparam -genkey -name secp384r1 -out server-key.pem
+        ;;
+    ECDSA|ecdsa|P521|p521 )
+        openssl ecparam -genkey -name secp521r1 -out ca-key.pem
+        openssl ecparam -genkey -name secp521r1 -out server-key.pem
+        ;;
+    EDDSA|eddsa|ED25519|ed25519|X25519|x25519|"" )
+        openssl genpkey -algorithm ED25519 -out ca-key.pem
+        openssl genpkey -algorithm ED25519 -out server-key.pem
+        ;;
+    * )
+        echo Unknown curve/algorithm
+        ;;
+esac
 
 echo "CREATE CA CERTIFICATE"
-rm -f *
 cat > ca.cnf << EOF
 [req]
 prompt = no
-default_bits = 4096
-default_md = sha256
 distinguished_name = dn
 x509_extensions = v3_req
 
@@ -23,11 +51,9 @@ CN = test-ca
 
 [v3_req]
 keyUsage=critical,keyCertSign
-# ,critical,digitalSignature,keyEncipherment
-# extendedKeyUsage=serverAuth,clientAuth
 basicConstraints = critical,CA:TRUE
-# subjectKeyIdentifier = hash
 subjectAltName = @alt_names
+subjectKeyIdentifier = hash
 
 [alt_names]
 DNS.1 = test-ca
@@ -36,12 +62,10 @@ EOF
 openssl req \
     -x509 \
     -new \
-    -newkey rsa:4096 \
     -days 1 \
     -nodes \
-    -sha256 \
     -config ca.cnf \
-    -keyout ca-key.pem \
+    -key ca-key.pem \
     -out ca-cert.pem -verbose
 
 echo "CREATE SERVER CSR"
@@ -64,7 +88,6 @@ CN = localhost
 keyUsage = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = serverAuth
 basicConstraints = critical,CA:FALSE
-# subjectKeyIdentifier = hash
 subjectAltName = @alt_names
 
 [alt_names]
@@ -75,10 +98,8 @@ EOF
 openssl req \
     -new \
     -nodes \
-    -sha256 \
-    -newkey rsa:4096 \
     -config server-csr.cnf \
-    -keyout server-key.pem \
+    -key server-key.pem \
     -out server-csr.pem -verbose
 
 echo "CREATE SERVER CERTIFICATE"
@@ -102,9 +123,8 @@ CN = localhost
 keyUsage = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = serverAuth
 basicConstraints = critical,CA:FALSE
-# subjectKeyIdentifier = hash
-# authorityKeyIdentifier = keyid,issuer
 subjectAltName = @alt_names
+authorityKeyIdentifier = keyid,issuer
 
 [alt_names]
 DNS.1 = localhost
@@ -114,7 +134,6 @@ EOF
 openssl x509 \
     -req \
     -days 1 \
-    -sha256 \
     -in server-csr.pem \
     -CA ca-cert.pem \
     -CAkey ca-key.pem \

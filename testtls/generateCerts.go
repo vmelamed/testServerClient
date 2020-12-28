@@ -33,14 +33,20 @@ func makePublicPrivateKey(privKeyID string) (publicKey, privateKey interface{}, 
 		privateKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	case "P384":
 		privateKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	case "ECDSA":
+		fallthrough
 	case "P521":
 		privateKey, err = ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
-	case "RSA1024":
-		privateKey, err = rsa.GenerateKey(rand.Reader, 1024)
+	case "RSA":
+		fallthrough
 	case "RSA2048":
 		privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
 	case "RSA4096":
 		privateKey, err = rsa.GenerateKey(rand.Reader, 4096)
+	case "ED25519":
+		fallthrough
+	case "EDDSA":
+		fallthrough
 	case "X25519":
 		_, privateKey, err = ed25519.GenerateKey(rand.Reader)
 	default:
@@ -51,19 +57,33 @@ func makePublicPrivateKey(privKeyID string) (publicKey, privateKey interface{}, 
 	}
 
 	switch privKeyID {
+	case "ECDSA":
+		fallthrough
 	case "P256":
+		fallthrough
 	case "P384":
+		fallthrough
 	case "P521":
 		publicKey = privateKey.(*ecdsa.PrivateKey).Public()
-	case "RSA1024":
+	case "RSA":
+		fallthrough
 	case "RSA2048":
+		fallthrough
 	case "RSA4096":
 		publicKey = privateKey.(*rsa.PrivateKey).Public()
+	case "ED25519":
+		fallthrough
+	case "EDDSA":
+		fallthrough
 	case "X25519":
 		publicKey = privateKey.(ed25519.PrivateKey).Public()
 	}
 
 	pubKeyID, err = makePublicKeyID(publicKey)
+	if err != nil {
+		privateKey = nil
+		publicKey = nil
+	}
 	return
 }
 
@@ -94,7 +114,7 @@ func generateCerts(privKeyID string) (serverCert *tls.Certificate, caCert *x509.
 		return
 	}
 
-	publicKey, privateKey, _, err := makePublicPrivateKey(privKeyID)
+	publicKeyCA, privateKeyCA, _, err := makePublicPrivateKey(privKeyID)
 	if err != nil {
 		return
 	}
@@ -112,12 +132,10 @@ func generateCerts(privKeyID string) (serverCert *tls.Certificate, caCert *x509.
 		NotAfter:              time.Now().AddDate(0, 0, 1),
 		BasicConstraintsValid: true,
 		IsCA:                  true,
-		// SubjectKeyId:          caPubKeyID,
-		// AuthorityKeyId:        caPubKeyID,
-		DNSNames: []string{"test-ca"},
-		KeyUsage: x509.KeyUsageCertSign,
+		DNSNames:              []string{"test-ca"},
+		KeyUsage:              x509.KeyUsageCertSign,
 	}
-	caCertDERBytes, err := x509.CreateCertificate(rand.Reader, templateCA, templateCA, publicKey, privateKey)
+	caCertDERBytes, err := x509.CreateCertificate(rand.Reader, templateCA, templateCA, publicKeyCA, privateKeyCA)
 	if err != nil {
 		return
 	}
@@ -133,6 +151,16 @@ func generateCerts(privKeyID string) (serverCert *tls.Certificate, caCert *x509.
 	})
 	ioutil.WriteFile("certs/ca-cert-g.pem", caCertPEMBytes, os.FileMode(0644))
 
+	keyBytes, err := x509.MarshalPKCS8PrivateKey(privateKeyCA)
+	if err != nil {
+		return
+	}
+	keyPEMBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: keyBytes,
+	})
+	ioutil.WriteFile("certs/ca-key-g.pem", keyPEMBytes, os.FileMode(0644))
+
 	// create server certificate
 	serialNumber, err = rand.Int(rand.Reader, maxSerialNumber)
 	if err != nil {
@@ -140,7 +168,7 @@ func generateCerts(privKeyID string) (serverCert *tls.Certificate, caCert *x509.
 		return
 	}
 
-	publicKey, privateKey, _, err = makePublicPrivateKey(privKeyID)
+	publicKey, privateKey, _, err := makePublicPrivateKey(privKeyID)
 	if err != nil {
 		return
 	}
@@ -157,15 +185,13 @@ func generateCerts(privKeyID string) (serverCert *tls.Certificate, caCert *x509.
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().AddDate(0, 0, 1),
 		BasicConstraintsValid: true,
-		// SubjectKeyId:          pubKeyID,
-		// AuthorityKeyId:        caPubKeyID,
-		DNSNames:    []string{"localhost"},
-		IPAddresses: []net.IP{{127, 0, 0, 1}},
-		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{{127, 0, 0, 1}},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 
-	certDERBytes, err := x509.CreateCertificate(rand.Reader, templateServer, caCert, publicKey, privateKey)
+	certDERBytes, err := x509.CreateCertificate(rand.Reader, templateServer, caCert, publicKey, privateKeyCA)
 	if err != nil {
 		caCert = nil
 		return
@@ -176,6 +202,15 @@ func generateCerts(privKeyID string) (serverCert *tls.Certificate, caCert *x509.
 		Bytes: certDERBytes,
 	})
 	ioutil.WriteFile("certs/server-cert-g.pem", certPEMBytes, os.FileMode(0644))
+	keyBytes, err = x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return
+	}
+	keyPEMBytes = pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: keyBytes,
+	})
+	ioutil.WriteFile("certs/server-key-g.pem", keyPEMBytes, os.FileMode(0644))
 
 	cert, err := x509.ParseCertificate(certDERBytes)
 	if err != nil {
