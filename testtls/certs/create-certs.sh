@@ -2,8 +2,7 @@
 set +x
 
 script_dir=$(dirname $0)
-mkdir -p $script_dir/certs
-pushd $script_dir/certs
+pushd $script_dir
 
 echo "CREATE CA CERTIFICATE"
 rm -f *
