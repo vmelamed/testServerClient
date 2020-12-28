@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"os"
 
 	"github.com/pkg/errors"
 )
@@ -12,6 +13,12 @@ func main() {
 	var tlsSrvCert *tls.Certificate
 	var caCert *x509.Certificate
 	var err error
+
+	err = os.Mkdir("certs", os.ModeDir|os.FileMode(0755))
+	if !os.IsExist(err) {
+		fmt.Printf("Error creating the \"certs\" directory: %+v\n", err)
+		os.Exit(1)
+	}
 
 	fmt.Println("TEST WITH GENERATED CERTIFICATES")
 	tlsSrvCert, caCert, err = generateCerts()

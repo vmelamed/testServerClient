@@ -134,7 +134,7 @@ func generateCerts() (serverCert *tls.Certificate, caCert *x509.Certificate, err
 	}
 
 	serverCert = &tls.Certificate{
-		Certificate: [][]byte{certDERBytes, caCertDERBytes},
+		Certificate: [][]byte{certDERBytes},
 		PrivateKey:  privKey,
 		Leaf:        cert,
 	}
