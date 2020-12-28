@@ -27,7 +27,7 @@ keyUsage=critical,keyCertSign
 # ,critical,digitalSignature,keyEncipherment
 # extendedKeyUsage=serverAuth,clientAuth
 basicConstraints = critical,CA:TRUE
-subjectKeyIdentifier = hash
+# subjectKeyIdentifier = hash
 subjectAltName = @alt_names
 
 [alt_names]
@@ -65,7 +65,7 @@ CN = localhost
 keyUsage = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = serverAuth
 basicConstraints = critical,CA:FALSE
-subjectKeyIdentifier = hash
+# subjectKeyIdentifier = hash
 subjectAltName = @alt_names
 
 [alt_names]
@@ -103,8 +103,8 @@ CN = localhost
 keyUsage = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = serverAuth
 basicConstraints = critical,CA:FALSE
-subjectKeyIdentifier = hash
-authorityKeyIdentifier=keyid,issuer
+# subjectKeyIdentifier = hash
+# authorityKeyIdentifier = keyid,issuer
 subjectAltName = @alt_names
 
 [alt_names]

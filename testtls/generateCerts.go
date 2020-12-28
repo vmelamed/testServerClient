@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
@@ -9,6 +12,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/pem"
+	"fmt"
 	"io/ioutil"
 	"math/big"
 	"net"
@@ -18,7 +22,70 @@ import (
 
 const showCertCmdFmt = "# %s\necho \"%s\" | openssl x509 -text -noout\n"
 
-func generateCerts() (serverCert *tls.Certificate, caCert *x509.Certificate, err error) {
+type subjectPublicKeyInfo struct {
+	Algorithm        pkix.AlgorithmIdentifier
+	SubjectPublicKey asn1.BitString
+}
+
+func makePublicPrivateKey(privKeyID string) (publicKey, privateKey interface{}, pubKeyID []byte, err error) {
+	switch privKeyID {
+	case "P256":
+		privateKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	case "P384":
+		privateKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	case "P521":
+		privateKey, err = ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	case "RSA1024":
+		privateKey, err = rsa.GenerateKey(rand.Reader, 1024)
+	case "RSA2048":
+		privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
+	case "RSA4096":
+		privateKey, err = rsa.GenerateKey(rand.Reader, 4096)
+	case "X25519":
+		_, privateKey, err = ed25519.GenerateKey(rand.Reader)
+	default:
+		err = fmt.Errorf("don't know how to make public/private key %s", privKeyID)
+	}
+	if err != nil {
+		return
+	}
+
+	switch privKeyID {
+	case "P256":
+	case "P384":
+	case "P521":
+		publicKey = privateKey.(*ecdsa.PrivateKey).Public()
+	case "RSA1024":
+	case "RSA2048":
+	case "RSA4096":
+		publicKey = privateKey.(*rsa.PrivateKey).Public()
+	case "X25519":
+		publicKey = privateKey.(ed25519.PrivateKey).Public()
+	}
+
+	pubKeyID, err = makePublicKeyID(publicKey)
+	return
+}
+
+func makePublicKeyID(publicKey interface{}) (pubKeyID []byte, err error) {
+	encodedPubBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		return
+	}
+
+	var subPKI subjectPublicKeyInfo
+
+	_, err = asn1.Unmarshal(encodedPubBytes, &subPKI)
+	if err != nil {
+		return
+	}
+
+	pubKeySum := sha1.Sum(subPKI.SubjectPublicKey.Bytes)
+	pubKeyID = pubKeySum[:]
+	return
+}
+
+func generateCerts(privKeyID string) (serverCert *tls.Certificate, caCert *x509.Certificate, err error) {
 	maxSerialNumber := new(big.Int).SetBits([]big.Word{0, 0, 1}) // 2^129
 
 	// create CA certificate
@@ -27,18 +94,10 @@ func generateCerts() (serverCert *tls.Certificate, caCert *x509.Certificate, err
 		return
 	}
 
-	// _, privKey, _ := ed25519.GenerateKey(rand.Reader)
-	// privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	privKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	publicKey, privateKey, _, err := makePublicPrivateKey(privKeyID)
 	if err != nil {
 		return
 	}
-
-	pubKeyBytes, err := asn1.Marshal(*privKey.Public().(*rsa.PublicKey))
-	if err != nil {
-		return
-	}
-	caSubjectKeyID := sha1.Sum(pubKeyBytes)
 
 	templateCA := &x509.Certificate{
 		Subject: pkix.Name{
@@ -53,12 +112,12 @@ func generateCerts() (serverCert *tls.Certificate, caCert *x509.Certificate, err
 		NotAfter:              time.Now().AddDate(0, 0, 1),
 		BasicConstraintsValid: true,
 		IsCA:                  true,
-		SubjectKeyId:          caSubjectKeyID[:],
-		DNSNames:              []string{"test-ca"},
-		KeyUsage:              x509.KeyUsageCertSign, // x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment |
-		// ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		// SubjectKeyId:          caPubKeyID,
+		// AuthorityKeyId:        caPubKeyID,
+		DNSNames: []string{"test-ca"},
+		KeyUsage: x509.KeyUsageCertSign,
 	}
-	caCertDERBytes, err := x509.CreateCertificate(rand.Reader, templateCA, templateCA, privKey.Public(), privKey)
+	caCertDERBytes, err := x509.CreateCertificate(rand.Reader, templateCA, templateCA, publicKey, privateKey)
 	if err != nil {
 		return
 	}
@@ -81,19 +140,10 @@ func generateCerts() (serverCert *tls.Certificate, caCert *x509.Certificate, err
 		return
 	}
 
-	// _, privKey, _ := ed25519.GenerateKey(rand.Reader)
-	// privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	privKey, err = rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		caCert = nil
-		return
-	}
-
-	pubKeyBytes, err = asn1.Marshal(*privKey.Public().(*rsa.PublicKey))
+	publicKey, privateKey, _, err = makePublicPrivateKey(privKeyID)
 	if err != nil {
 		return
 	}
-	servSubjectKeyID := sha1.Sum(pubKeyBytes)
 
 	templateServer := &x509.Certificate{
 		Subject: pkix.Name{
@@ -107,15 +157,15 @@ func generateCerts() (serverCert *tls.Certificate, caCert *x509.Certificate, err
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().AddDate(0, 0, 1),
 		BasicConstraintsValid: true,
-		SubjectKeyId:          servSubjectKeyID[:],
-		AuthorityKeyId:        caSubjectKeyID[:],
-		DNSNames:              []string{"localhost"},
-		IPAddresses:           []net.IP{{127, 0, 0, 1}},
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, // , x509.ExtKeyUsageClientAuth
+		// SubjectKeyId:          pubKeyID,
+		// AuthorityKeyId:        caPubKeyID,
+		DNSNames:    []string{"localhost"},
+		IPAddresses: []net.IP{{127, 0, 0, 1}},
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 
-	certDERBytes, err := x509.CreateCertificate(rand.Reader, templateServer, caCert, privKey.Public(), privKey)
+	certDERBytes, err := x509.CreateCertificate(rand.Reader, templateServer, caCert, publicKey, privateKey)
 	if err != nil {
 		caCert = nil
 		return
@@ -134,8 +184,8 @@ func generateCerts() (serverCert *tls.Certificate, caCert *x509.Certificate, err
 	}
 
 	serverCert = &tls.Certificate{
-		Certificate: [][]byte{certDERBytes},
-		PrivateKey:  privKey,
+		Certificate: [][]byte{certDERBytes, caCertDERBytes},
+		PrivateKey:  privateKey,
 		Leaf:        cert,
 	}
 

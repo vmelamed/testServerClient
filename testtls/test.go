@@ -21,7 +21,7 @@ func main() {
 	}
 
 	fmt.Println("TEST WITH GENERATED CERTIFICATES")
-	tlsSrvCert, caCert, err = generateCerts()
+	tlsSrvCert, caCert, err = generateCerts("X25519")
 	if err != nil {
 		err = errors.Wrap(err, "error generating certificates")
 	} else {

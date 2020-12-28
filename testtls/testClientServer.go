@@ -38,23 +38,25 @@ var (
 )
 
 func testClientServer(tlsSrvCert *tls.Certificate, caCert *x509.Certificate) error {
-	// create server
-	tlsServerConfig := &tls.Config{
-		Certificates:             []tls.Certificate{*tlsSrvCert},
-		MinVersion:               tlsMinVersion,
-		MaxVersion:               tlsMaxVersion,
-		CurvePreferences:         curvePreferences,
-		CipherSuites:             cipherSuites,
-		PreferServerCipherSuites: true,
-	}
 
-	handler := &testHandler{}
+	var tlsCACert = tls.Certificate{
+		PrivateKey: nil,
+		Leaf:       caCert,
+	}
+	// create server
 	server := &http.Server{
 		Addr:         "localhost:2000",
+		Handler:      &testHandler{},
 		ReadTimeout:  300 * time.Second,
 		WriteTimeout: 5 * time.Second,
-		TLSConfig:    tlsServerConfig,
-		Handler:      handler,
+		TLSConfig: &tls.Config{
+			Certificates:             []tls.Certificate{*tlsSrvCert, tlsCACert},
+			MinVersion:               tlsMinVersion,
+			MaxVersion:               tlsMaxVersion,
+			CurvePreferences:         curvePreferences,
+			CipherSuites:             cipherSuites,
+			PreferServerCipherSuites: true,
+		},
 	}
 
 	// run the server
