@@ -1,1 +1,8 @@
 /.vscode
+/certs
+
+*.pem
+*.csr
+*.cnf
+*.ext
+*.srl
